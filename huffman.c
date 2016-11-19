@@ -1,285 +1,312 @@
-/* SimpleHuffman.c - a simple program that uses Huffman trees to encode files
-** see left404.com/2011/07/25/simplehuffman for more information.
-**
-** Copyright (C) 7/25/2011  Dara Hazeghi
-**
-** This software may be freely modified and redistributed.  It has no warranty.
-*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define CHAR_RANGE  257     /* max number of character values */
-#define FAKE_EOF    256     /* special value to signify end-of-file */
-#define CHAR_BITS   8
+/* n de chars possiveis levados em conta */
+#define CHARS_N  257
 
-/* Huffman tree structure */
+/* Marcador de final de arquivo */
+#define FIM_CHAR    256
+
+/* tamanho dos chars em bits */
+#define CHAR_SIZE   8
+
+/* struct da arvore de Hufman */
 typedef struct htree
 {
-    struct htree *left;
-    struct htree *right;
-    int letter;
+    struct htree *esqerda;
+    struct htree *direita;
+    int letra;
     int freq;
 } htree;
 
-/* compare two Huffman trees based on frequency, descending order */
-int CmpTrees(const void *a, const void *b)
+///////////////////////////////////
+// Funcoes
+///////////////////////////////////
+int comparaHTree(const void *a, const void *b);
+htree *MontaHTree(int frequencias[]);
+char *Concat(char *prefix, char letra);
+void Error(const char *msg);
+void CortaArvore(htree *arvore);
+void PercorreArvore(htree *arvore, char **tabela, char *prefix);
+char **MontaTabela(int frequencias[]);
+void ApagaTabela(char *tabela[]);
+void EscreveHeader(FILE *out, int frequencias[]);
+int *LeHeader(FILE *in);
+void BitWriter(const char *charCod, FILE *out);
+int ReadBit(FILE *in);
+int DecChar(FILE *in, htree *arvore);
+void Dec(FILE *in, FILE *out);
+void Cod(FILE *in, FILE *out);
+
+
+/////////////////////////////////
+// Implementacoes
+/////////////////////////////////
+
+
+/* Comparador de arvores */
+int comparaHTree(const void *a, const void *b)
 {
     const htree **x = (const htree **) a, **y = (const htree **) b;
     if((*x)->freq == (*y)->freq) return 0;
     else return ((*x)->freq < (*y)->freq) ? 1 : -1;
 }
 
-/* create a new string with given letter concatenated on to the prefix */
-char *Concat(char *prefix, char letter)
+/* Construtor de arvore, recebe tabela de frequencia */
+htree *MontaHTree(int frequencias[])
+{
+    int i, len = 0;
+    htree *fila[CHARS_N];
+
+    /* Cria arvores para cada char, adicionando a fila */
+    for(i = 0; i < CHARS_N; i++)
+    {
+        if(frequencias[i])
+        {
+            htree *tempTree = (htree *)calloc(1, sizeof(htree));
+            tempTree->letra = i;
+            tempTree->freq = frequencias[i];
+
+            fila[len++] = tempTree;
+        }
+    }
+
+    while(len > 1)
+    {
+        htree *tempTree = (htree *)malloc(sizeof(htree));
+
+        /* organiza por ordem de frequencia (menos frequentes por ultimo) */
+        qsort(fila, len, sizeof(htree *), comparaHTree);
+
+        /* tira da fila as 2 arvores de menor frequencia, e faz nova arvore */
+				/* com as mesmas */
+        tempTree->esqerda = fila[--len];
+        tempTree->direita = fila[--len];
+        tempTree->freq = tempTree->esqerda->freq + tempTree->direita->freq;
+
+				/* insere de volta para a fila */
+        fila[len++] = tempTree;
+    }
+
+		/* Ultima arvore na fila e a arvore completa */
+    return fila[0];
+}
+
+/* Concatenador se palavras e letras */
+char *Concat(char *prefix, char letra)
 {
     char *result = (char *)malloc(strlen(prefix) + 2);
-    sprintf(result, "%s%c", prefix, letter);
+    sprintf(result, "%s%c", prefix, letra);
     return result;
 }
 
-/* print specified error message and quite */
+/* Handle de erros */
 void Error(const char *msg)
 {
-    fprintf(stderr, "Error: %s\n", msg);
+    fprintf(stderr, "ERRO: %s\n", msg);
     exit(1);
 }
 
-/* build and return a Huffman tree based on a frequency table */
-htree *BuildTree(int frequencies[])
+/* recursivamente desaloca arvore de memoria */
+void CortaArvore(htree *arvore)
 {
-    int i, len = 0;
-    htree *queue[CHAR_RANGE];
-    
-    /* create trees for each character, add to the queue */
-    for(i = 0; i < CHAR_RANGE; i++)
+    if(arvore)
     {
-        if(frequencies[i])
-        {
-            htree *toadd = (htree *)calloc(1, sizeof(htree));
-            toadd->letter = i;
-            toadd->freq = frequencies[i];
-
-            queue[len++] = toadd;
-        }
-    }
-    
-    while(len > 1)
-    {
-        htree *toadd = (htree *)malloc(sizeof(htree));
-        
-        /* sort - smallest frequency trees are last */
-        qsort(queue, len, sizeof(htree *), CmpTrees);
-        
-        /* dequeue two lowest frequency trees, build new tree from them */
-        toadd->left = queue[--len];
-        toadd->right = queue[--len];
-        toadd->freq = toadd->left->freq + toadd->right->freq;
-        
-        queue[len++] = toadd; /* insert back in the queue */
-    }
-    
-    return queue[0]; /* last tree in the queue is the full Huffman tree */
-}
-
-/* deallocate given Huffman tree */
-void FreeTree(htree *tree)
-{
-    if(tree)
-    {
-        FreeTree(tree->left);
-        FreeTree(tree->right);
-        free(tree);
+        CortaArvore(arvore->esqerda);
+        CortaArvore(arvore->direita);
+        free(arvore);
     }
 }
 
-/* traverse the Huffman tree to build up a table of encodings */
-void TraverseTree(htree *tree, char **table, char *prefix)
+/* percorre arvore recirsivamente montando tabela de codificacao */
+void PercorreArvore(htree *arvore, char **tabela, char *prefix)
 {
-    if(!tree->left && !tree->right) table[tree->letter] = prefix;
+    if(!arvore->esqerda && !arvore->direita) tabela[arvore->letra] = prefix;
     else
     {
-        if(tree->left) TraverseTree(tree->left, table, Concat(prefix, '0'));
-        if(tree-> right) TraverseTree(tree->right, table, Concat(prefix, '1'));
+        if(arvore->esqerda)
+				    PercorreArvore(arvore->esqerda, tabela, Concat(prefix, '0'));
+        if(arvore-> direita)
+				    PercorreArvore(arvore->direita, tabela, Concat(prefix, '1'));
         free(prefix);
     }
 }
 
-/* build a table of Huffman encodings given a set of frequencies */
-char **BuildTable(int frequencies[])
+/* monta tabela de codificacao com base na tabela de frequencia */
+char **MontaTabela(int frequencias[])
 {
-    static char *table[CHAR_RANGE];
+    static char *tabela[CHARS_N];
     char *prefix = (char *)calloc(1, sizeof(char));
-    htree *tree = BuildTree(frequencies);
-    TraverseTree(tree, table, prefix);
-    FreeTree(tree);
-    
-    return table;
+    htree *arvore = MontaHTree(frequencias);
+    PercorreArvore(arvore, tabela, prefix);
+    CortaArvore(arvore);
+
+    return tabela;
 }
 
-/* deallocate table of Huffman encodings */
-void FreeTable(char *table[])
+/* desaloca tabela de codificacao de memoria */
+void ApagaTabela(char *tabela[])
 {
     int i;
-    for(i = 0; i < CHAR_RANGE; i++) if(table[i]) free(table[i]);
+    for(i = 0; i < CHARS_N; i++) if(tabela[i]) free(tabela[i]);
 }
 
-/* output the Huffman header for an encoded file */
-void WriteHeader(FILE *out, int frequencies[])
+/* Constroi o cabecalhio do arquivo com base nas frequencias */
+void EscreveHeader(FILE *out, int frequencias[])
 {
     int i, count = 0;
-    
-    for(i = 0; i < CHAR_RANGE; i++) if(frequencies[i]) count++;
+
+    for(i = 0; i < CHARS_N; i++) if(frequencias[i]) count++;
     fprintf(out, "%d\n", count);
-    
-    for(i = 0; i < CHAR_RANGE; i++)
-        if(frequencies[i]) fprintf(out, "%d %d\n", i, frequencies[i]);
+
+    for(i = 0; i < CHARS_N; i++)
+        if(frequencias[i]) fprintf(out, "%d %d\n", i, frequencias[i]);
 }
 
-/* read in the header of a Huffman encoded file */
-int *ReadHeader(FILE *in)
+/* le cabecalhio de um arquivo codificado e monta tabela de frequencias*/
+int *LeHeader(FILE *in)
 {
-    static int frequencies[CHAR_RANGE];
-    int i, count, letter, freq;
-    
-    if(fscanf(in, "%d", &count) != 1) Error("invalid input file.");
-    
+    static int frequencias[CHARS_N];
+    int i, count, letra, freq;
+
+    if(fscanf(in, "%d", &count) != 1) Error("Arquivo de entrada invalido.");
+
     for(i = 0; i < count; i++)
     {
-        if((fscanf(in, "%d %d", &letter, &freq) != 2)
-           || letter < 0 || letter >= CHAR_RANGE) Error("invalid input file.");
-        
-        frequencies[letter] = freq;
+        if((fscanf(in, "%d %d", &letra, &freq) != 2)
+           || letra < 0 || letra >= CHARS_N)
+					     Error("Arquivo de entrada invalido.");
+
+        frequencias[letra] = freq;
     }
-    fgetc(in); /* discard last newline */
-    
-    return frequencies;
+		/* discarta ultima linha */
+    fgetc(in);
+
+    return frequencias;
 }
 
-/* write the given bit encoding to the output file */
-void WriteBits(const char *encoding, FILE *out)
+/* escreve bit para arquivo */
+void BitWriter(const char *charCod, FILE *out)
 {
-    /* buffer holding raw bits and number of bits filled */
+    /* buffer de bits e contagem dos mesmos */
     static int bits = 0, bitcount = 0;
-    
-    while(*encoding)
+
+    while(*charCod)
     {
-        /* push bits on from the right */
-        bits = bits * 2 + *encoding - '0';
+        /* bufferiza bits da esquerda */
+        bits = bits * 2 + *charCod - '0';
         bitcount++;
-        
-        /* when we have filled the char, output as a single character */
-        if(bitcount == CHAR_BITS)
+
+        /* quando buffer atingir tamanho de char, escreve o mesmo e reseta */
+				/* contagem/buffer */
+        if(bitcount == CHAR_SIZE)
         {
             fputc(bits, out);
             bits = 0;
             bitcount = 0;
         }
-        
-        encoding++;
+
+        charCod++;
     }
 }
 
-/* read a single bit from the input file */
+/* le unico bit de arquivo input */
 int ReadBit(FILE *in)
 {
-    /* buffer holding raw bits and size of MSB filled */
+    /* buffer de bits e contagem dos mesmos */
     static int bits = 0, bitcount = 0;
     int nextbit;
-    
+
     if(bitcount == 0)
     {
         bits = fgetc(in);
-        bitcount = (1 << (CHAR_BITS - 1));
+        bitcount = (1 << (CHAR_SIZE - 1));
     }
-    
+
     nextbit = bits / bitcount;
     bits %= bitcount;
     bitcount /= 2;
-    
+
     return nextbit;
 }
 
-/* decode and return a single character from the input using the given Huffman
- * tree */
-int DecodeChar(FILE *in, htree *tree)
+ /* decodifica e retorna char a partir de IN e arvore H */
+int DecChar(FILE *in, htree *arvore)
 {
-    while(tree->left || tree->right)
+    while(arvore->esqerda || arvore->direita)
     {
-        if(ReadBit(in)) tree = tree->right;
-        else tree = tree->left;
-        
-        if(!tree) Error("invalid input file.");
+        if(ReadBit(in)) arvore = arvore->direita;
+        else arvore = arvore->esqerda;
+
+        if(!arvore) Error("Arquivo de entrada invalido.");
     }
-    return tree->letter;
+    return arvore->letra;
 }
 
-/* decode the Huffman-encoded file in and save the results to out */
-void Decode(FILE *in, FILE *out)
+/* decodifica arquivo codificado e salva */
+void Dec(FILE *in, FILE *out)
 {
-    int *frequencies, c;
-    htree *tree;
-    
-    frequencies = ReadHeader(in);
-    tree = BuildTree(frequencies);
-    
-    while((c = DecodeChar(in, tree)) != FAKE_EOF)
+    int *frequencias, c;
+    htree *arvore;
+
+    frequencias = LeHeader(in);
+    arvore = MontaHTree(frequencias);
+
+    while((c = DecChar(in, arvore)) != FIM_CHAR)
         fputc(c, out);
-    
-    FreeTree(tree);
+
+    CortaArvore(arvore);
 }
 
-/* create a Huffman encoding for the file in and save the encoded version to
- * out */
-void Encode(FILE *in, FILE *out)
+/* codifica arquivo deodificado e salva */
+void Cod(FILE *in, FILE *out)
 {
-    int c, frequencies[CHAR_RANGE] = { 0 };
-    char **table;
-    
-    while((c = fgetc(in)) != EOF) frequencies[c]++;
-    
-    frequencies[FAKE_EOF] = 1;
+    int c, frequencias[CHARS_N] = { 0 };
+    char **tabela;
+
+    while((c = fgetc(in)) != EOF) frequencias[c]++;
+
+    frequencias[FIM_CHAR] = 1;
     rewind(in);
-    
-    table = BuildTable(frequencies);
-    WriteHeader(out, frequencies);
-    
+
+    tabela = MontaTabela(frequencias);
+    EscreveHeader(out, frequencias);
+
     while((c = fgetc(in)) != EOF)
-        WriteBits(table[c], out);
-    
-    /* use FAKE_EOF to indicate end of input */
-    WriteBits(table[FAKE_EOF], out);
-    
-    /* write an extra 8 blank bits to flush the output buffer */
-    WriteBits("0000000", out);
-    
-    FreeTable(table);
+        BitWriter(tabela[c], out);
+
+    /* escreve char sinalizador de fim de arquivo */
+    BitWriter(tabela[FIM_CHAR], out);
+
+    /* flush oputput buffer */
+    BitWriter("0000000", out);
+
+    ApagaTabela(tabela);
 }
 
-/* program to encode and decode files using Huffman trees */
 int main(int argc, char *argv[])
 {
     FILE *in, *out;
-    
+
     if(argc != 4 || (strcmp(argv[1], "-c") && strcmp(argv[1], "-d")))
     {
-        fprintf(stderr, "Usage: %s [-c,-d] infile outfile\n", argv[0]);
+        fprintf(stderr, "Uso: %s [-c,-d] input output\n", argv[0]);
         exit(0);
     }
-    
+
     if(!(in = fopen(argv[2], "rb")))
-        Error("input file couldn't be opened.");
+        Error("Nao e possivel abrir arquivo de entrada.");
     else if((out = fopen(argv[3], "rb")))
-        Error("output file already exists.");
+        Error("Arquivo de saida ja existe.");
     else if(!(out = fopen(argv[3], "wb")))
-        Error("output file couldn't be opened.");
-    
-    if(!strcmp(argv[1], "-c")) Encode(in, out);
-    else Decode(in, out);
-    
+        Error("Arquivo de saida nao pode ser aberto.");
+
+    if(!strcmp(argv[1], "-c")) Cod(in, out);
+    else Dec(in, out);
+
     fclose(in);
     fclose(out);
-    
+
     return 0;
 }
