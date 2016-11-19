@@ -133,6 +133,13 @@ void PercorreArvore(htree *arvore, char **tabela, char *prefix)
     }
 }
 
+/* desaloca tabela de codificacao de memoria */
+void ApagaTabela(char *tabela[])
+{
+    int i;
+    for(i = 0; i < CHARS_N; i++) if(tabela[i]) free(tabela[i]);
+}
+
 /* monta tabela de codificacao com base na tabela de frequencia */
 char **MontaTabela(int frequencias[])
 {
@@ -143,13 +150,6 @@ char **MontaTabela(int frequencias[])
     CortaArvore(arvore);
 
     return tabela;
-}
-
-/* desaloca tabela de codificacao de memoria */
-void ApagaTabela(char *tabela[])
-{
-    int i;
-    for(i = 0; i < CHARS_N; i++) if(tabela[i]) free(tabela[i]);
 }
 
 /* Constroi o cabecalhio do arquivo com base nas frequencias */
@@ -186,6 +186,26 @@ int *LeHeader(FILE *in)
     return frequencias;
 }
 
+/* le unico bit de arquivo input */
+int ReadBit(FILE *in)
+{
+    /* buffer de bits e contagem dos mesmos */
+    static int bits = 0, bitcount = 0;
+    int nextbit;
+
+    if(bitcount == 0)
+    {
+        bits = fgetc(in);
+        bitcount = (1 << (CHAR_SIZE - 1));
+    }
+
+    nextbit = bits / bitcount;
+    bits %= bitcount;
+    bitcount /= 2;
+
+    return nextbit;
+}
+
 /* escreve bit para arquivo */
 void BitWriter(const char *charCod, FILE *out)
 {
@@ -209,26 +229,6 @@ void BitWriter(const char *charCod, FILE *out)
 
         charCod++;
     }
-}
-
-/* le unico bit de arquivo input */
-int ReadBit(FILE *in)
-{
-    /* buffer de bits e contagem dos mesmos */
-    static int bits = 0, bitcount = 0;
-    int nextbit;
-
-    if(bitcount == 0)
-    {
-        bits = fgetc(in);
-        bitcount = (1 << (CHAR_SIZE - 1));
-    }
-
-    nextbit = bits / bitcount;
-    bits %= bitcount;
-    bitcount /= 2;
-
-    return nextbit;
 }
 
  /* decodifica e retorna char a partir de IN e arvore H */
