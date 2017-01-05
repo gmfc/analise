@@ -10,7 +10,7 @@ int matriz[9][9];
 // Contador de N de passos usados
 //////////////////////////////////
 int passos = 0;
-
+int verif = 10457159;
 // Declara funcao resolve
 /////////////////////////
 void resolve(int,int);
@@ -70,7 +70,7 @@ void imprimeMatriz()
   for(linha=0;linha<9;linha++)
   {
     for(coluna=0;coluna<9;coluna++) printf("%d ",matriz[linha][coluna]);
-    printf("\n");
+    printf("\nti");
   }
 }
 
@@ -127,5 +127,5 @@ int main()
 {
   leMatrizArquivo(matriz,9);
   resolve(0,0);
-	printf("passos: %d\n",passos);
+  printf("passos: %d a:%d\n",passos,3*verif);
 }
