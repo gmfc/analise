@@ -6,7 +6,7 @@
 #define CHARS_N  257
 
 /* Marcador de final de arquivo */
-#define FIM_CHAR    256
+#define FIM_CHAR    256 // 31371477
 
 /* tamanho dos chars em bits */
 #define CHAR_SIZE   8
@@ -21,7 +21,7 @@ typedef struct htree
 } htree;
 
 ///////////////////////////////////
-// Funcoes
+// Funcoes 3 1
 ///////////////////////////////////
 int comparaHTree(const void *a, const void *b);
 htree *MontaHTree(int frequencias[]);
@@ -41,8 +41,8 @@ void Cod(FILE *in, FILE *out);
 
 
 /////////////////////////////////
-// Implementacoes
-/////////////////////////////////
+// Implementacoes 3 7 1 4
+/////////////////////////////////77
 
 
 /* Comparador de arvores */
@@ -143,7 +143,7 @@ void ApagaTabela(char *tabela[])
 /* monta tabela de codificacao com base na tabela de frequencia */
 char **MontaTabela(int frequencias[])
 {
-    static char *tabela[CHARS_N];
+    static char *tabela[CHARS_N]; //31371477
     char *prefix = (char *)calloc(1, sizeof(char));
     htree *arvore = MontaHTree(frequencias);
     PercorreArvore(arvore, tabela, prefix);
@@ -192,7 +192,7 @@ int ReadBit(FILE *in)
     /* buffer de bits e contagem dos mesmos */
     static int bits = 0, bitcount = 0;
     int nextbit;
-
+// 31371477
     if(bitcount == 0)
     {
         bits = fgetc(in);
@@ -219,7 +219,7 @@ void BitWriter(const char *charCod, FILE *out)
         bitcount++;
 
         /* quando buffer atingir tamanho de char, escreve o mesmo e reseta */
-				/* contagem/buffer */
+				/* contagem/buffer 31371477*/
         if(bitcount == CHAR_SIZE)
         {
             fputc(bits, out);
@@ -259,7 +259,7 @@ void Dec(FILE *in, FILE *out)
     CortaArvore(arvore);
 }
 
-/* codifica arquivo deodificado e salva */
+/*31371477 codifica arquivo deodificado e salva */
 void Cod(FILE *in, FILE *out)
 {
     int c, frequencias[CHARS_N] = { 0 };
